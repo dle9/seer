@@ -1,3 +1,1 @@
-pub struct Linux {
-    temp: usize
-}
+// utilities for linux core dump process

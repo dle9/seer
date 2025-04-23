@@ -1,6 +1,28 @@
-use crate::linux::util::Linux;
-pub mod linux;
+use clap::Parser;
+use anyhow::Result;
+use nix::unistd::Pid;
 
-fn main() {
-    println!("Hello, world!");
+use crate::linux::linux_seer;
+use crate::windows::windows_seer;
+pub mod linux;
+pub mod windows;
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = "Dump memory of a process.")]
+struct Args {
+    #[arg(short, long, help = "PID of target process.")]
+    pid: i32,
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+    let pid = Pid::from_raw(args.pid);
+
+    if cfg!(target_os = "linux") {
+        linux_seer::dump(pid)?;
+    } else if cfg!(target_os = "windows") {
+        windows_seer::dump(pid)?;
+    }
+
+    Ok(())
 }
