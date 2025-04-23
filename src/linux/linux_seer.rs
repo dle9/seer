@@ -31,7 +31,7 @@ pub fn dump(pid: Pid) -> Result<()> {
     match ptrace::attach(pid) {
         Ok(()) => {
             info!("ptrace::attach({})", pid);
-            get_map(pid)?;
+            get_map_data(pid)?;
         },
         Err(e) => error!("ptrace::attach({})", e)
     };
@@ -44,7 +44,7 @@ pub fn dump(pid: Pid) -> Result<()> {
     Ok(())
 }
 
-fn get_map(pid: Pid) -> Result<()> {
+fn get_map_data(pid: Pid) -> Result<Vec<MapData>> {
     let raw_data = read_to_string(format!("/proc/{pid}/maps"))
         .expect("Failed to read mapping");
 
@@ -68,7 +68,5 @@ fn get_map(pid: Pid) -> Result<()> {
         }); 
     }
 
-    dbg!(map_data);
-
-    Ok(())
+    Ok(map_data)
 }
