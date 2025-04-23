@@ -4,29 +4,28 @@ use std::fs::read_to_string;
 use anyhow::Result;
 
 
-#[derive(Debug)]
-/// Data structure for /proc/<pid>/maps
+/// data structure for /proc/<pid>/maps
 struct MapData {
-    /// Memory address block in the format `<addr start>-<addr end>`.
+    /// memory address block in the format `<addr start>-<addr end>`.
     addr_block: Option<String>,
 
-    /// Permissions: `r`, `w`, `x`, `p` (private), `s` (shared).
+    /// permissions: `r`, `w`, `x`, `p` (private), `s` (shared).
     perms: Option<String>,
 
-    /// Offset within the file for file-backed mappings.
+    /// offset within the file for file mappings.
     offset: Option<String>,
 
-    /// Device major and minor IDs in the format `<major>:<minor>`.
+    /// device id `<major>:<minor>`.
     device: Option<String>,
 
-    /// Inode number of the file for file-backed mappings.
+    /// inode number of the file for file  mappings.
     inode: Option<String>,
 
-    /// Filesystem path for file-backed mappings.
+    /// filesystem path for file mappings.
     pathname: Option<String>,
 }
 
-/// Dump memory of linux process
+/// dump memory of linux process
 pub fn dump(pid: Pid) -> Result<()> {
     match ptrace::attach(pid) {
         Ok(()) => {
@@ -44,11 +43,12 @@ pub fn dump(pid: Pid) -> Result<()> {
     Ok(())
 }
 
+/// parse data from /proc/<pid>/maps
 fn get_map_data(pid: Pid) -> Result<Vec<MapData>> {
-    let raw_data = read_to_string(format!("/proc/{pid}/maps"))
+    let raw_map_data = read_to_string(format!("/proc/{pid}/maps"))
         .expect("Failed to read mapping");
 
-    let lines: Vec<Vec<&str>> = raw_data
+    let lines: Vec<Vec<&str>> = raw_map_data
         .lines()
         .map(|line| {
             line.split_whitespace()
@@ -69,4 +69,11 @@ fn get_map_data(pid: Pid) -> Result<Vec<MapData>> {
     }
 
     Ok(map_data)
+}
+
+// parse data from /proc/<pid>/mem 
+fn get_mem_data(map_data: &[MapData], pid: Pid) -> Result<()> {
+    let mem = read_to_string(format!("/proc/{pid}/mem"));
+
+    Ok(())
 }
