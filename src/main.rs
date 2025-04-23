@@ -18,6 +18,8 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let pid = Pid::from_raw(args.pid);
 
+    env_logger::init();
+
     if cfg!(target_os = "linux") {
         linux_seer::dump(pid)?;
     } else if cfg!(target_os = "windows") {
