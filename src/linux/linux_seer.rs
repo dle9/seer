@@ -1,6 +1,6 @@
 use log::{info, error};
 use nix::{sys::{ptrace}, unistd::Pid};
-use std::fs::read_to_string;
+use std::fs::{File, read_to_string};
 use anyhow::Result;
 
 
@@ -45,10 +45,10 @@ pub fn dump(pid: Pid) -> Result<()> {
 
 /// parse data from /proc/<pid>/maps
 fn get_map_data(pid: Pid) -> Result<Vec<MapData>> {
-    let raw_map_data = read_to_string(format!("/proc/{pid}/maps"))
+    let raw = read_to_string(format!("/proc/{pid}/maps"))
         .expect("Failed to read mapping");
 
-    let lines: Vec<Vec<&str>> = raw_map_data
+    let lines: Vec<Vec<&str>> = raw
         .lines()
         .map(|line| {
             line.split_whitespace()
@@ -57,6 +57,7 @@ fn get_map_data(pid: Pid) -> Result<Vec<MapData>> {
         .collect();
     
     let mut map_data: Vec<MapData> = Vec::new();
+
     for line in lines {
         map_data.push(MapData { 
             addr_block: line.get(0).map(|s| s.to_string()), 
@@ -73,7 +74,7 @@ fn get_map_data(pid: Pid) -> Result<Vec<MapData>> {
 
 // parse data from /proc/<pid>/mem 
 fn get_mem_data(map_data: &[MapData], pid: Pid) -> Result<()> {
-    let mem = read_to_string(format!("/proc/{pid}/mem"));
+    let mem = File::open(format!("/proc/{pid}/mem"));
 
     Ok(())
 }
