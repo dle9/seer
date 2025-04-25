@@ -21,8 +21,8 @@ fn main() -> Result<()> {
     env_logger::init();
 
     if cfg!(target_os = "linux") {
-        let mut mem = Mem::new(pid);
-        mem.dump()?;
+        let mem = Mem::new(pid);
+        mem?.dump()?;
     } else if cfg!(target_os = "windows") {
         windows_seer::dump(pid)?;
     }
