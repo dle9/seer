@@ -2,7 +2,7 @@ use clap::Parser;
 use anyhow::Result;
 use nix::unistd::Pid;
 
-use crate::linux::linux_seer::Mem;
+use crate::linux::linux_seer;
 use crate::windows::windows_seer;
 pub mod linux;
 pub mod windows;
@@ -21,7 +21,7 @@ fn main() -> Result<()> {
     env_logger::init();
 
     if cfg!(target_os = "linux") {
-        let mem = Mem::new(pid);
+        let mem = linux_seer::Mem::new(pid);
         mem?.dump()?;
     } else if cfg!(target_os = "windows") {
         windows_seer::dump(pid)?;

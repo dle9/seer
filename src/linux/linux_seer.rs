@@ -1,4 +1,4 @@
-use log::{info, error};
+use log::{info, warn, error};
 use nix::{sys::{ptrace, wait}, unistd::Pid};
 use std::fs::{File, read_to_string};
 use std::io::{Read, Seek, SeekFrom};
@@ -9,10 +9,10 @@ use anyhow::Result;
 #[derive(Debug)]
 struct MapData {
     /// start addr of the mapping address block.
-    start:      u64,
+    start:      usize,
 
     /// end addr of the mapping address block.
-    end:        u64,
+    end:        usize,
 
     /// permissions: `r`, `w`, `x`, `p` (private), `s` (shared).
     r:          bool,
@@ -22,7 +22,7 @@ struct MapData {
     s:          bool,
 
     /// offset within the file for file mappings.
-    offset:     String,
+    offset:     usize,
 
     /// device id `<major>:<minor>`.
     device:     String,
@@ -35,7 +35,7 @@ struct MapData {
 }
 
 
-/// for /prov/<pid>/mem
+/// for /proc/<pid>/mem
 pub struct Mem {
     /// pid of target process
     pid:        Pid,
@@ -64,19 +64,64 @@ impl Mem {
             Ok(wait::WaitStatus::Stopped(_, _)) => {
                 info!("ptrace::attach({})", self.pid);
                 self.read_mapping();
+                    
+                // create a copy of the mapping
+                let old_mapping: Vec<MapData> = std::mem::take(&mut self.mapping);
 
-                // self.get_mem_data(addr)
-                let first = self.mapping.first().unwrap();
+                // iter over the mapping and find strings
+                for map in old_mapping.iter() {
+                    // only continue if readable
+                    if !map.r {
+                        continue;
+                    }
+                    
+                    // dont read these
+                    if let Some(file) = &map.pathname {
+                        if file.starts_with("/usr") {
+                            continue;
+                        }
+                    }
 
-                dbg!(self.read_mem_slice::<usize>(first.start, (first.end - first.start) as usize))?;
+                    Mem::display_mapping(map);
+                    let num_elems = map.end - map.start;
+                    let start_addr = map.start as u64;
 
+                    // read the entire memory region
+                    if let Ok(data) = self.read_mem_slice::<u8>(start_addr, num_elems, 0) {
+                        let mut i = 0;
+                        while i < data.len() {
+                            // check valid ascii
+                            let string_start = i;
+                            let mut string_len = 0;
+                            while i < data.len() && data[i].is_ascii() && data[i] >= 32 && data[i] <= 126 {
+                                string_len += 1;
+                                i += 1;
+                            }
+
+                            // valid string?
+                            if string_len >= 4 {
+                                let string_data = String::from_utf8_lossy(&data[string_start..string_start + string_len]);
+                                info!("String at 0x{:x}: {}", start_addr + string_start as u64, string_data);
+                            }
+
+                            if i == string_start {
+                                i += 1;
+                            }
+                        }
+                    } else {
+                        warn!("Failed to read memory at 0x{:x}", start_addr);
+                    }
+                }
+
+                // restore the old mapping and detach from the ptrace
+                self.mapping = old_mapping;
                 ptrace::detach(self.pid, None).expect("failed to detach pid.");
+                info!("ptrace::detach({})", self.pid);
             },
 
             Err(e) => error!("waitpid error {}", e),
 
             _ => ()
-
         };
 
         Ok(())
@@ -104,16 +149,18 @@ impl Mem {
                 .expect("Failed to read address block");
             
             let perms = line.get(1).map(|s| s.to_string()).unwrap();
+            
+            let offset = line.get(2).map(|s| s.to_string()).unwrap();
 
             mapping.push(MapData { 
-                start:      u64::from_str_radix(start, 16).expect("failed to parse start addr."),
-                end:        u64::from_str_radix(end, 16).expect("failed to parse end addr."),
+                start:      usize::from_str_radix(start, 16).expect("failed to parse start addr."),
+                end:        usize::from_str_radix(end, 16).expect("failed to parse end addr."),
                 r:          perms.get(0..1) == Some("r"),
                 w:          perms.get(1..2) == Some("w"), 
                 x:          perms.get(2..3) == Some("x"),
                 p:          perms.get(3..4) == Some("p"),
                 s:          perms.get(3..5) == Some("s"),
-                offset:     line.get(2).map(|s| s.to_string()).unwrap(), 
+                offset:     usize::from_str_radix(&offset, 16).expect("failed to parse offset."), 
                 device:     line.get(3).map(|s| s.to_string()).unwrap(), 
                 inode:      line.get(4).map(|s| s.to_string()).unwrap(), 
                 pathname:   line.get(5).map(|s| s.to_string()),
@@ -125,7 +172,7 @@ impl Mem {
 
     /// read a `T` from memory at `start_addr`
     pub fn read_mem<T: Pod>(&mut self, start_addr: u64) -> Result<T> {
-        // reserve space for T
+        // reserve uninitialized (MaybeUninit) space for T
         let mut ret: MaybeUninit<T> = MaybeUninit::uninit();
 
         // go to start of addr block
@@ -144,8 +191,9 @@ impl Mem {
     }
 
     // read a `T` from memory
-    pub fn read_mem_slice<T: Pod>(&mut self, start_addr: u64, num_elems: usize) -> Result<Box<[T]>> {
-        // reserve space for `num_elems` amount of T on the heap (Box)
+    pub fn read_mem_slice<T: Pod>(&mut self, start_addr: u64, num_elems: usize, offset: usize) -> Result<Box<[T]>> {
+        // reserve uninitialized (MaybeUninit) space for `num_elems` amount of T on the heap (Box)
+        let num_elems = num_elems.saturating_sub(offset);
         let mut ret: Box<[MaybeUninit<T>]> = Box::new_uninit_slice(num_elems);
 
         // go to start of addr block
@@ -158,12 +206,36 @@ impl Mem {
         };
 
         // fill the byte slice
-        self.mem.read_exact(ptr)?;
+        match self.mem.read_exact(ptr) {
+            Ok(()) => Ok(unsafe { ret.assume_init() }),
+            Err(e) => {
+                error!("Failed to read memory at {:x} (+{:x}): {}", start_addr, offset, e);
+                Err(e.into())
+            }
+        }
+    }
 
-        Ok(unsafe { ret.assume_init() })
+    fn display_mapping(mapping: &MapData) {
+        let mut perms = String::with_capacity(4);
+            perms.push(if mapping.r     { 'r' } else { '-' });
+            perms.push(if mapping.w     { 'w' } else { '-' });
+            perms.push(if mapping.x     { 'x' } else { '-' });
+            perms.push(if mapping.p     { 'p' }
+                     else if mapping.s  { 's' }
+                     else               { '-' });
+
+        info!("{:x}-{:x} {} {:x} {} {} {}", 
+            mapping.start, mapping.end,
+            perms,
+            mapping.offset,
+            mapping.device,
+            mapping.inode,
+            if let Some(pathname) = &mapping.pathname { pathname } else { "" }
+        );
     }
 }
 
+/// Plain Old Data type
 pub unsafe trait Pod: Copy + Sync + Send + 'static {}
 
 unsafe impl Pod for i8    {}
