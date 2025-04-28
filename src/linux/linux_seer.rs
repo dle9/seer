@@ -27,7 +27,7 @@ struct MapData {
     /// device id `<major>:<minor>`.
     device:     String,
 
-    /// inode number of the file for file mappings.
+    /// inode for file mappings.
     inode:      String,
 
     /// filesystem path for file mappings.
