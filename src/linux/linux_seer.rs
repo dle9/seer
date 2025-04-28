@@ -63,55 +63,15 @@ impl Mem {
         match wait::waitpid(self.pid, None) { 
             Ok(wait::WaitStatus::Stopped(_, _)) => {
                 info!("ptrace::attach({})", self.pid);
+
+                // read from /proc/pid/maps and put into self.mapping
                 self.read_mapping();
                     
                 // create a copy of the mapping
                 let old_mapping: Vec<MapData> = std::mem::take(&mut self.mapping);
 
-                // iter over the mapping and find strings
-                for map in old_mapping.iter() {
-                    // only continue if readable
-                    if !map.r {
-                        continue;
-                    }
-                    
-                    // dont read these
-                    if let Some(file) = &map.pathname {
-                        if file.starts_with("/usr") {
-                            continue;
-                        }
-                    }
-
-                    Mem::display_mapping(map);
-                    let num_elems = map.end - map.start;
-                    let start_addr = map.start as u64;
-
-                    // read the entire memory region
-                    if let Ok(data) = self.read_mem_slice::<u8>(start_addr, num_elems, 0) {
-                        let mut i = 0;
-                        while i < data.len() {
-                            // check valid ascii
-                            let string_start = i;
-                            let mut string_len = 0;
-                            while i < data.len() && data[i].is_ascii() && data[i] >= 32 && data[i] <= 126 {
-                                string_len += 1;
-                                i += 1;
-                            }
-
-                            // valid string?
-                            if string_len >= 4 {
-                                let string_data = String::from_utf8_lossy(&data[string_start..string_start + string_len]);
-                                info!("String at 0x{:x}: {}", start_addr + string_start as u64, string_data);
-                            }
-
-                            if i == string_start {
-                                i += 1;
-                            }
-                        }
-                    } else {
-                        warn!("Failed to read memory at 0x{:x}", start_addr);
-                    }
-                }
+                // read from /proc/pid/mem
+                self.read_memory(&old_mapping);
 
                 // restore the old mapping and detach from the ptrace
                 self.mapping = old_mapping;
@@ -128,7 +88,7 @@ impl Mem {
     }    
 
     /// parse data from /proc/<pid>/maps
-    pub fn read_mapping(&mut self) {
+    fn read_mapping(&mut self) {
         let raw = read_to_string(format!("/proc/{}/maps", self.pid))
             .expect("Failed to read mapping");
 
@@ -171,27 +131,56 @@ impl Mem {
     }
 
     /// read a `T` from memory at `start_addr`
-    pub fn read_mem<T: Pod>(&mut self, start_addr: u64) -> Result<T> {
-        // reserve uninitialized (MaybeUninit) space for T
-        let mut ret: MaybeUninit<T> = MaybeUninit::uninit();
+    fn read_memory(&mut self, mapping: &[MapData]) {
+        // iter over the mapping and find strings
+        for map in mapping.iter() {
+            // only continue if readable
+            if !map.r {
+                continue;
+            }
+            
+            // dont read these
+            if let Some(file) = &map.pathname {
+                if file.starts_with("/usr") {
+                    continue;
+                }
+            }
 
-        // go to start of addr block
-        self.mem.seek(SeekFrom::Start(start_addr))?;
+            // for logging
+            Mem::display_mapping(map);
 
-        // create an empty byte slice that points to ret
-        let ptr = unsafe {
-            core::slice::from_raw_parts_mut(
-                ret.as_mut_ptr() as *mut u8, core::mem::size_of_val(&ret))
-        };
-        
-        // fill the byte slice
-        self.mem.read_exact(ptr)?;
+            // read the entire memory region
+            let num_elems = map.end - map.start;
+            let start_addr = map.start as u64;
+            if let Ok(data) = self.read_mem_slice::<u8>(start_addr, num_elems, 0) {
+                let mut i = 0;
+                while i < data.len() {
+                    // check valid ascii
+                    let string_start = i;
+                    let mut string_len = 0;
+                    while i < data.len() && data[i].is_ascii() && data[i] >= 32 && data[i] <= 126 {
+                        string_len += 1;
+                        i += 1;
+                    }
 
-        Ok(unsafe { ret.assume_init() })
+                    // check length 
+                    if string_len >= 4 {
+                        let string_data = String::from_utf8_lossy(&data[string_start..string_start + string_len]);
+                        info!("String at 0x{:x}: {}", start_addr + string_start as u64, string_data);
+                    }
+
+                    if i == string_start {
+                        i += 1;
+                    }
+                }
+            } else {
+                warn!("Failed to read memory at 0x{:x}", start_addr);
+            }
+        }
     }
 
     // read a `T` from memory
-    pub fn read_mem_slice<T: Pod>(&mut self, start_addr: u64, num_elems: usize, offset: usize) -> Result<Box<[T]>> {
+    fn read_mem_slice<T: Pod>(&mut self, start_addr: u64, num_elems: usize, offset: usize) -> Result<Box<[T]>> {
         // reserve uninitialized (MaybeUninit) space for `num_elems` amount of T on the heap (Box)
         let num_elems = num_elems.saturating_sub(offset);
         let mut ret: Box<[MaybeUninit<T>]> = Box::new_uninit_slice(num_elems);
@@ -209,7 +198,7 @@ impl Mem {
         match self.mem.read_exact(ptr) {
             Ok(()) => Ok(unsafe { ret.assume_init() }),
             Err(e) => {
-                error!("Failed to read memory at {:x} (+{:x}): {}", start_addr, offset, e);
+                warn!("Failed to read memory at {:x} (+{:x}): {}", start_addr, offset, e);
                 Err(e.into())
             }
         }
