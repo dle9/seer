@@ -1,4 +1,4 @@
-use log::{info, warn, error};
+use log::{info, warn, debug, error};
 use nix::{sys::{ptrace, wait}, unistd::Pid};
 use std::fs::{File, read_to_string};
 use std::io::{Read, Seek, SeekFrom};
@@ -166,7 +166,7 @@ impl Mem {
                     // check length 
                     if string_len >= 4 {
                         let string_data = String::from_utf8_lossy(&data[string_start..string_start + string_len]);
-                        info!("String at 0x{:x}: {}", start_addr + string_start as u64, string_data);
+                        info!("0x{:x}: {}", start_addr + string_start as u64, string_data);
                     }
 
                     if i == string_start {
@@ -213,7 +213,7 @@ impl Mem {
                      else if mapping.s  { 's' }
                      else               { '-' });
 
-        info!("{:x}-{:x} {} {:x} {} {} {}", 
+        debug!("{:x}-{:x} {} {:x} {} {} {}", 
             mapping.start, mapping.end,
             perms,
             mapping.offset,

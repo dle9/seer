@@ -1,11 +1,11 @@
-Memory dump tool
+Rust memory dump tool
 
 ### Usage
 ```
-sudo -E $(which cargo) run -- -p <PID>
+RUST_LOG=debug sudo -E $(which cargo) run -- -p <PID> &> output.txt
 ```
 or
 ```
-cargo build
-sudo ./target/debug/seer -p <PID>
+sudo $(which cargo) build
+RUST_LOG=debug sudo -E ./target/debug/seer -p <PID> &> output.txt
 ```
