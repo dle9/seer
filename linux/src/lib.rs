@@ -42,9 +42,6 @@ pub struct Mem {
 
     /// vector holding the entire virtual addr mappings from /proc/pid/maps
     mapping:   Vec<Maps>,
-
-    /// file of the memory
-    mem:        File
 }
 
 impl Mem {
@@ -52,7 +49,6 @@ impl Mem {
         Ok(Self {
             pid: Pid::from_raw(0),
             mapping: Vec::new(),
-            mem: File::open("/dev/null")?,
         })
     }
 
@@ -177,8 +173,6 @@ impl Mem {
                         i += 1;
                     }
                 }
-            } else {
-                warn!("Failed to read memory at 0x{:x}", start_addr);
             }
         }
     }
@@ -190,7 +184,8 @@ impl Mem {
         let mut ret: Box<[MaybeUninit<T>]> = Box::new_uninit_slice(num_elems);
 
         // go to start of addr block
-        self.mem.seek(SeekFrom::Start(start_addr))?;
+        let mut mem_file = File::open(format!("/proc/{}/mem", self.pid))?;
+        mem_file.seek(SeekFrom::Start(start_addr))?;
         
         // create an empty byte slice that points to ret
         let ptr = unsafe {
@@ -199,7 +194,7 @@ impl Mem {
         };
 
         // fill the byte slice
-        match self.mem.read_exact(ptr) {
+        match mem_file.read_exact(ptr) {
             Ok(()) => Ok(unsafe { ret.assume_init() }),
             Err(e) => {
                 warn!("Failed to read memory at {:x} (+{:x}): {}", start_addr, offset, e);
