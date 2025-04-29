@@ -1,9 +1,8 @@
-[package]
-name = "seer"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "2"
+members = ["seer", "linux", "windows"]
 
-[dependencies]
+[workspace.dependencies]
 anyhow = "1.0.98"
 clap = { version = "4.5.37", features = ["derive"] }
 env_logger = "0.11.8"

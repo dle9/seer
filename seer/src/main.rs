@@ -12,19 +12,14 @@ fn main() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
 
-    if cfg!(target_os = "linux") {
-        let mut mem = seer::Mem::new()?;
-        mem.set_pid(args.pid);
-        mem.dump()?;
-    } else if cfg!(target_os = "windows") {
-        windows_seer::dump(args.pid)?;
-    }
+    let mut mem = Mem::new()?;
+    mem.set_pid(args.pid);
+    mem.dump()?;
 
     Ok(())
 }
 
-use crate::linux::seer;
-use crate::windows::windows_seer;
-
-mod linux;
-mod windows;
+#[cfg(target_os = "linux")]
+use linux::Mem;
+#[cfg(target_os = "windows")]
+use windows::Mem;
