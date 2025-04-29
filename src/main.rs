@@ -1,11 +1,5 @@
 use clap::Parser;
 use anyhow::Result;
-use nix::unistd::Pid;
-
-use crate::linux::linux_seer;
-use crate::windows::windows_seer;
-pub mod linux;
-pub mod windows;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = "Dump memory of a process.")]
@@ -15,17 +9,22 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
-    let pid = Pid::from_raw(args.pid);
-
     env_logger::init();
+    let args = Args::parse();
 
     if cfg!(target_os = "linux") {
-        let mem = linux_seer::Mem::new(pid);
-        mem?.dump()?;
+        let mut mem = seer::Mem::new()?;
+        mem.set_pid(args.pid);
+        mem.dump()?;
     } else if cfg!(target_os = "windows") {
-        windows_seer::dump(pid)?;
+        windows_seer::dump(args.pid)?;
     }
 
     Ok(())
 }
+
+use crate::linux::seer;
+use crate::windows::windows_seer;
+
+mod linux;
+mod windows;

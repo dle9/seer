@@ -7,7 +7,7 @@ use anyhow::Result;
 
 /// for /proc/<pid>/maps
 #[derive(Debug)]
-struct MapData {
+struct Maps {
     /// start addr of the mapping address block.
     start:      usize,
 
@@ -40,20 +40,24 @@ pub struct Mem {
     /// pid of target process
     pid:        Pid,
 
-    /// vector holding the entire file mapping file of the target pid
-    mapping:   Vec<MapData>,
+    /// vector holding the entire virtual addr mappings from /proc/pid/maps
+    mapping:   Vec<Maps>,
 
     /// file of the memory
     mem:        File
 }
 
 impl Mem {
-    pub fn new(_pid: Pid) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         Ok(Self {
-            pid: _pid,
+            pid: Pid::from_raw(0),
             mapping: Vec::new(),
-            mem: File::open(format!("/proc/{}/mem", _pid))?,
+            mem: File::open("/dev/null")?,
         })
+    }
+
+    pub fn set_pid(&mut self, _pid: i32) {
+        self.pid = Pid::from_raw(_pid);
     }
 
     /// dump memory of linux process
@@ -65,10 +69,10 @@ impl Mem {
                 info!("ptrace::attach({})", self.pid);
 
                 // read from /proc/pid/maps and put into self.mapping
-                self.read_mapping();
+                self.load_mapping();
                     
                 // create a copy of the mapping
-                let old_mapping: Vec<MapData> = std::mem::take(&mut self.mapping);
+                let old_mapping: Vec<Maps> = std::mem::take(&mut self.mapping);
 
                 // read from /proc/pid/mem
                 self.read_memory(&old_mapping);
@@ -88,7 +92,7 @@ impl Mem {
     }    
 
     /// parse data from /proc/<pid>/maps
-    fn read_mapping(&mut self) {
+    fn load_mapping(&mut self) {
         let raw = read_to_string(format!("/proc/{}/maps", self.pid))
             .expect("Failed to read mapping");
 
@@ -100,7 +104,7 @@ impl Mem {
             })
             .collect();
         
-        let mut mapping: Vec<MapData> = Vec::new();
+        let mut mapping: Vec<Maps> = Vec::new();
 
         for line in lines {
             let addr_block = line.first().map(|s| s.to_string());
@@ -112,7 +116,7 @@ impl Mem {
             
             let offset = line.get(2).map(|s| s.to_string()).unwrap();
 
-            mapping.push(MapData { 
+            mapping.push(Maps { 
                 start:      usize::from_str_radix(start, 16).expect("failed to parse start addr."),
                 end:        usize::from_str_radix(end, 16).expect("failed to parse end addr."),
                 r:          perms.get(0..1) == Some("r"),
@@ -131,7 +135,7 @@ impl Mem {
     }
 
     /// read a `T` from memory at `start_addr`
-    fn read_memory(&mut self, mapping: &[MapData]) {
+    fn read_memory(&mut self, mapping: &[Maps]) {
         // iter over the mapping and find strings
         for map in mapping.iter() {
             // only continue if readable
@@ -204,7 +208,7 @@ impl Mem {
         }
     }
 
-    fn display_mapping(mapping: &MapData) {
+    fn display_mapping(mapping: &Maps) {
         let mut perms = String::with_capacity(4);
             perms.push(if mapping.r     { 'r' } else { '-' });
             perms.push(if mapping.w     { 'w' } else { '-' });

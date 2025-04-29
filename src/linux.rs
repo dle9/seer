@@ -1,1 +1,1 @@
-pub mod linux_seer;
+pub mod seer;
