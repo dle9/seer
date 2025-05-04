@@ -5,11 +5,9 @@ edition = "2024"
 
 [features]
 linux = []
-windows = []
 
 [dependencies]
 env_logger.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 linux = { path = "../linux" }
-windows = { path = "../windows" }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["seer", "linux", "windows"]
+members = ["seer", "linux"]
 
 [workspace.dependencies]
 anyhow = "1.0.98"

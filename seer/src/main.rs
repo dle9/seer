@@ -21,5 +21,3 @@ fn main() -> Result<()> {
 
 #[cfg(target_os = "linux")]
 use linux::Mem;
-#[cfg(target_os = "windows")]
-use windows::Mem;
